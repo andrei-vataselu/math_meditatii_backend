@@ -53,7 +53,6 @@ CLIENT_URL=https://your-frontend.vercel.app
 | POST   | /auth/logout        | Logout user                | Yes (JWT)    |
 | GET    | /auth/me            | Get current user           | Yes (JWT)    |
 | POST   | /auth/refresh       | Refresh JWT using refresh  | Yes (cookie) |
-| POST   | /auth/reset-password| Reset password (placeholder)| No           |
 
 ### User Profile
 | Method | Path           | Description         | Auth Required |

@@ -3,39 +3,52 @@ const { signToken, setTokenCookie } = require('../utils/token');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
-// In-memory store for refresh tokens (replace with DB/Redis for prod)
-const refreshTokens = new Set();
+const {
+  signAccessToken,
+  signRefreshToken,
+  storeRefreshToken,
+  revokeRefreshToken,
+  setTokenCookies,
+  clearTokenCookies,
+  validateRefreshToken,
+  verifyRefreshToken
+} = require('../utils/token');
+const RefreshToken = require('../models/RefreshToken');
+const logger = require('../utils/logger');
 
-const signRefreshToken = (payload) => {
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
-};
-
-const verifyRefreshToken = (token) => {
-  return jwt.verify(token, process.env.JWT_SECRET);
-};
 
 exports.signup = async (req, res, next) => {
   try {
-    if (req.cookies && req.cookies.token) {
-      return res.status(400).json({ errors: [{ field: 'global', message: 'Deja ești logat, vezi cookie-uri' }] });
+    // Block signup if already logged in
+    const sessionAccessToken = req.cookies.accessToken;
+const sessionRefreshToken = req.cookies.refreshToken;
+    let alreadyLoggedIn = false;
+    if (sessionAccessToken) {
+      try {
+        require('../utils/token').verifyAccessToken(sessionAccessToken);
+        alreadyLoggedIn = true;
+      } catch {}
+    }
+    if (!alreadyLoggedIn && sessionRefreshToken) {
+      if (await require('../utils/token').validateRefreshToken(sessionRefreshToken)) alreadyLoggedIn = true;
+    }
+    if (alreadyLoggedIn) {
+      return res.status(400).json({ message: 'Already logged in' });
     }
     const { email, password, firstName, lastName, phoneNumber } = req.body;
-    if(!phoneNumber)
-      return res.json({message:'Trebuie sa iti pui si numarul de telefon'})
+    if (!phoneNumber)
+      return res.status(400).json({ message: 'Trebuie sa iti pui si numarul de telefon' });
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ message: 'Email already in use' });
     const ip = req.headers['x-forwarded-for'] || req.ip;
     const user = await User.create({ email, password, firstName, lastName, phoneNumber, lastSignupIp: ip });
-    const token = signToken({ id: user._id });
-    const refreshToken = signRefreshToken({ id: user._id });
-    refreshTokens.add(refreshToken);
-    setTokenCookie(res, token);
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    });
+    // Revoke all previous refresh tokens for this user (single session policy)
+    await RefreshToken.revokeAllForUser(user._id);
+    // Issue tokens
+    const accessToken = signAccessToken({ userId: user._id });
+    const refreshToken = signRefreshToken({ userId: user._id });
+    await storeRefreshToken(user._id, refreshToken, { ip });
+    setTokenCookies(res, accessToken, refreshToken);
     res.status(201).json({ user: { email: user.email, firstName, lastName, phoneNumber } });
   } catch (err) {
     next(err);
@@ -44,8 +57,21 @@ exports.signup = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
   try {
-    if (req.cookies && req.cookies.token) {
-      return res.status(400).json({ errors: [{ field: 'global', message: 'Deja ești logat, vezi cookie-uri' }] });
+    // Block login if already logged in
+    const sessionAccessToken = req.cookies.accessToken;
+const sessionRefreshToken = req.cookies.refreshToken;
+    let alreadyLoggedIn = false;
+    if (sessionAccessToken) {
+      try {
+        require('../utils/token').verifyAccessToken(sessionAccessToken);
+        alreadyLoggedIn = true;
+      } catch {}
+    }
+    if (!alreadyLoggedIn && sessionRefreshToken) {
+      if (await require('../utils/token').validateRefreshToken(sessionRefreshToken)) alreadyLoggedIn = true;
+    }
+    if (alreadyLoggedIn) {
+      return res.status(400).json({ message: 'Already logged in' });
     }
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -55,28 +81,31 @@ exports.login = async (req, res, next) => {
     const ip = req.headers['x-forwarded-for'] || req.ip;
     user.lastLoginIp = ip;
     await user.save();
-    const token = signToken({ id: user._id });
-    const refreshToken = signRefreshToken({ id: user._id });
-    refreshTokens.add(refreshToken);
-    setTokenCookie(res, token);
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-    });
+    // Revoke all previous refresh tokens for this user (single session policy)
+    await RefreshToken.revokeAllForUser(user._id);
+    // Issue tokens
+    const accessToken = signAccessToken({ userId: user._id });
+    const refreshToken = signRefreshToken({ userId: user._id });
+    await storeRefreshToken(user._id, refreshToken, { ip });
+    setTokenCookies(res, accessToken, refreshToken);
     res.json({ user: { email: user.email, firstName: user.firstName, lastName: user.lastName, phoneNumber: user.phoneNumber } });
   } catch (err) {
     next(err);
   }
 };
 
-exports.logout = (req, res) => {
-  const refreshToken = req.cookies.refreshToken;
-  if (refreshToken) refreshTokens.delete(refreshToken);
-  res.clearCookie('token');
-  res.clearCookie('refreshToken');
-  res.json({ message: 'Logged out' });
+exports.logout = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken, 'logout');
+    }
+    clearTokenCookies(res);
+    res.json({ message: 'Logged out' });
+  } catch (err) {
+    logger.error('Logout error', { error: err.message });
+    res.status(500).json({ message: 'Logout failed' });
+  }
 };
 
 exports.me = async (req, res, next) => {
@@ -88,21 +117,28 @@ exports.me = async (req, res, next) => {
   }
 };
 
-exports.refresh = (req, res) => {
+exports.refresh = async (req, res) => {
+  const logger = require('../utils/logger');
+  logger.info('[REFRESH] Incoming cookies:', req.cookies);
+
   const { refreshToken } = req.cookies;
-  if (!refreshToken || !refreshTokens.has(refreshToken)) {
+  if (!refreshToken) {
+    logger.warn('[REFRESH] No refreshToken cookie received');
+    return res.status(401).json({ message: 'No refresh token cookie' });
+  }
+  const isValid = await validateRefreshToken(refreshToken);
+  logger.info(`[REFRESH] validateRefreshToken result: ${isValid}`);
+  if (!isValid) {
+    logger.warn('[REFRESH] Refresh token invalid or not found in DB');
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
   try {
     const decoded = verifyRefreshToken(refreshToken);
-    const token = signToken({ id: decoded.id });
-    setTokenCookie(res, token);
+    const accessToken = signAccessToken({ userId: decoded.userId });
+    setTokenCookies(res, accessToken, refreshToken);
     res.json({ message: 'Token refreshed' });
   } catch (err) {
-    return res.status(401).json({ message: 'Invalid refresh token' });
+    logger.error('[REFRESH] Error verifying refresh token', { error: err.message });
+    return res.status(401).json({ message: 'Invalid refresh token', error: err.message });
   }
 };
-
-exports.resetPassword = (req, res) => {
-  res.status(501).json({ message: 'Reset password not implemented' });
-}; 

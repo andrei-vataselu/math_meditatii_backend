@@ -7,7 +7,7 @@ const { updateProfileValidation } = require('../validators/userValidators');
 
 const router = express.Router();
 
-router.get('/profile', auth, userController.getProfile);
+
 
 router.patch('/profile', auth, validate(updateProfileValidation), userController.updateProfile);
 

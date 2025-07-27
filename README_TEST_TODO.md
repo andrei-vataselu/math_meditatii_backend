@@ -9,11 +9,9 @@ Bifează fiecare rută după ce a fost testată cu succes (inclusiv validări, e
 - [X]  POST /auth/logout — delogare (cu/ fără cookie)
 - [X]  GET /auth/me — returnează userul curent (autentificat/ neautentificat)
 - [ ]  POST /auth/refresh — refresh token (cu/ fără cookie valid)
-- [ ]  POST /auth/reset-password — placeholder (răspuns 501)
 
 ## User Profile
 
-- [ ]  GET /user/profile — profilul userului (autentificat/ neautentificat)
 - [ ]  PATCH /user/profile — update profil (validări, edge cases)
 
 ## Plans

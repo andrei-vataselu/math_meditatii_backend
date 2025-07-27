@@ -1,0 +1,112 @@
+PRODUCTION TODO — Google Cloud + Docker-Ready App
+🔒 1. Security Enhancements
+🔐 Authentication & Session Security
+✅ COMPLETED: Store refresh tokens in MongoDB (RefreshToken model)
+✅ COMPLETED: Fields: token ID, user ID, expiry date, device info, revocation tracking
+✅ COMPLETED: Support: token revocation, token rotation, token reuse detection
+✅ COMPLETED: Rotate refresh tokens on every refresh
+✅ COMPLETED: On logout or detected reuse, invalidate token & all associated sessions
+✅ COMPLETED: Use Authorization header for bearer tokens (access & refresh)
+
+Implement CORS:
+
+js
+Copy
+Edit
+app.use(cors({
+origin: 'https://yourfrontend.com',
+credentials: true,
+allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+✅ COMPLETED: Ensure password reset only works with valid/verified users.
+
+🛡️ Web Security Headers
+Use helmet() with:
+
+X-Content-Type-Options
+
+Referrer-Policy
+
+Content-Security-Policy
+
+✅ COMPLETED: Sanitize all inputs using express-validator, xss-clean, express-mongo-sanitize.
+
+🧠 2. Sensitive Data Handling
+
+✅ COMPLETED: Use winston or pino for logging.
+
+✅ COMPLETED: Disable console.log/console.error in production.
+
+✅ COMPLETED: Log only non-sensitive user information.
+
+💳 3. Stripe Integration Hardening
+✅ Checkout
+✅ COMPLETED: Save subscriptionId in user model.
+
+Add support for plan upgrades/cancellations via Stripe dashboard or portal.
+
+🔁 Webhook Events
+✅ COMPLETED: Add /webhook endpoint and verify Stripe signature.
+
+✅ COMPLETED: Handle key Stripe events (checkout.session.completed, invoice.payment_failed, customer.subscription.deleted, etc.)
+
+checkout.session.completed: mark user as paid.
+
+invoice.payment_failed: notify/downgrade user.
+
+customer.subscription.deleted: revoke access.
+
+---
+
+## Testing & QA
+
+See `todo_test.md` for a full checklist of what to test, manual QA steps, and all API endpoints to verify. 
+- Covers registration, login, logout, protected routes, refresh, Stripe, password reset, input sanitization, error handling, email, and Docker/deployment.
+- Mark items as checked when tested.
+
+customer.updated: sync billing info.
+
+Log Stripe event IDs to prevent duplicates/debug issues.
+
+
+👁️ 5. Logging, Monitoring & Alerts
+Use winston/pino with:
+
+Log levels: error, info, debug
+
+
+Set up alerts for:
+
+Payment failures
+
+5xx errors
+
+High login failure rate
+
+☁️ 6. Deployment-Ready (Google Cloud Optimized)
+app.set('trust proxy', 1) (Cloud Run )
+
+Use HTTPS only (Cloud Run does this by default)
+
+CORS: credentials: true & allow only frontend domain.
+
+Use Dockerfile and .dockerignore (see example below)
+
+🧱 7. Infrastructure / DevOps
+Dockerize app, MongoDB, 
+
+Add /healthz endpoint.
+
+Use different .env configs for development, staging, production.
+
+
+📬 8. Email Integration
+Use SendGrid, Mailgun, or Google Mail API.
+
+Payment status
+
+Plan change/cancellation
+
+
+important: remove password for reset password
