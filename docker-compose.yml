@@ -1,0 +1,57 @@
+version: "3.8"
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: math_meditatii_mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: devuser
+      MONGO_INITDB_ROOT_PASSWORD: devpass
+      MONGO_INITDB_DATABASE: mathmeditatii
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: .
+    container_name: math_meditatii_backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env.docker
+    depends_on:
+      - mongo
+    environment:
+      PORT: 5000
+      MONGO_URI: mongodb://devuser:devpass@mongo:27017/mathmeditatii?authSource=admin
+      JWT_SECRET: dev_jwt_secret_please_change
+      JWT_EXPIRES_IN: 1d
+      STRIPE_SECRET_KEY: your_stripe_key
+      STRIPE_WEBHOOK_SECRET: your_webhook_key
+      CLIENT_URL: http://localhost:3000
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: true
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npx nodemon --config nodemon.json server.js
+
+  mongo-express:
+    image: mongo-express:1.0.0-20
+    container_name: math_meditatii_mongo_express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: devuser
+      ME_CONFIG_MONGODB_ADMINPASSWORD: devpass
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: adminpass
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:

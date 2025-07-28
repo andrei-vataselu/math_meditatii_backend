@@ -1,8 +1,8 @@
 const { body } = require('express-validator');
-
+ 
 const popularProviders = [
   'gmail.com', 'yahoo.com', 'outlook.com', 'icloud.com', 'protonmail.com', 'aol.com', 'hotmail.com', 'ymail.com', 'mail.com'
-];
+]; 
 
 const emailValidator = body('email')
   .isEmail().withMessage('Email invalid')
@@ -12,7 +12,7 @@ const emailValidator = body('email')
     const domain = value.split('@')[1];
     if (!domain || !popularProviders.includes(domain.toLowerCase())) {
       throw new Error('Emailul trebuie să fie de la un provider popular (gmail, yahoo, outlook, etc)');
-    }
+    }  
     return true;
   });
 

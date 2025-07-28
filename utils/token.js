@@ -59,7 +59,7 @@ const rotateRefreshToken = async (oldToken, userId, deviceInfo = {}) => {
     const oldRefreshToken = await RefreshToken.findOne({ 
       token: oldToken, 
       userId,
-      isRevoked: false 
+      revoked: false 
     });
     
     if (!oldRefreshToken) {
@@ -67,7 +67,7 @@ const rotateRefreshToken = async (oldToken, userId, deviceInfo = {}) => {
     }
     
     // Check for reuse detection
-    if (oldRefreshToken.isRevoked) {
+    if (oldRefreshToken.revoked) {
       logger.warn('Refresh token reuse detected', { userId, tokenId: oldRefreshToken.tokenId });
       // Revoke all tokens for this user as security measure
       await RefreshToken.revokeAllForUser(userId, 'reuse_detected');
@@ -75,7 +75,7 @@ const rotateRefreshToken = async (oldToken, userId, deviceInfo = {}) => {
     }
     
     // Revoke the old token
-    oldRefreshToken.isRevoked = true;
+    oldRefreshToken.revoked = true;
     oldRefreshToken.revokedAt = new Date();
     oldRefreshToken.revokedReason = 'rotation';
     await oldRefreshToken.save();
@@ -102,9 +102,9 @@ const rotateRefreshToken = async (oldToken, userId, deviceInfo = {}) => {
 // Revoke refresh token
 const revokeRefreshToken = async (token, reason = 'logout') => {
   try {
-    const refreshToken = await RefreshToken.findOne({ token, isRevoked: false });
+    const refreshToken = await RefreshToken.findOne({ token, revoked: false });
     if (refreshToken) {
-      refreshToken.isRevoked = true;
+      refreshToken.revoked = true;
       refreshToken.revokedAt = new Date();
       refreshToken.revokedReason = reason;
       await refreshToken.save();
@@ -117,23 +117,19 @@ const revokeRefreshToken = async (token, reason = 'logout') => {
 
 // Set secure cookies for tokens
 const setTokenCookies = (res, accessToken, refreshToken) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
-  // Access token cookie (short-lived)
-  res.cookie('accessToken', accessToken, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: isProduction,
-    maxAge: 15 * 60 * 1000, // 15 minutes
-  });
-  
-  // Refresh token cookie (long-lived)
-  res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: isProduction,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  });
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    };
+    res.cookie('accessToken', accessToken, cookieOptions);
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
 };
 
 // Clear token cookies
@@ -155,15 +151,27 @@ const extractToken = (req, tokenType = 'access') => {
   return req.cookies[cookieName];
 };
 
-// Validate refresh token exists in database
+// Validate refresh token exists in database with detailed logging
 const validateRefreshToken = async (token) => {
-  const refreshToken = await RefreshToken.findOne({ 
-    token, 
-    isRevoked: false,
-    expiresAt: { $gt: new Date() }
-  });
-  
-  return refreshToken !== null;
+  const logger = require('./logger');
+  const found = await RefreshToken.find({ token });
+  if (!found.length) {
+    logger.warn('[validateRefreshToken] No token found in DB', { token });
+    return false;
+  }
+  for (const t of found) {
+    if (t.revoked) {
+      logger.warn('[validateRefreshToken] Token is revoked', { tokenId: t.tokenId, user: t.user });
+      continue;
+    }
+    if (t.expiresAt < new Date()) {
+      logger.warn('[validateRefreshToken] Token is expired', { tokenId: t.tokenId, user: t.user, expiresAt: t.expiresAt });
+      continue;
+    }
+    logger.info('[validateRefreshToken] Token is valid', { tokenId: t.tokenId, user: t.user });
+    return true;
+  }
+  return false;
 };
 
 module.exports = {

@@ -43,17 +43,25 @@ module.exports = (err, req, res, next) => {
     message = err.message;
   }
 
+  // Always log full error internally, but never expose stack trace to client in prod
+  logger.error({
+    error: err.message,
+    stack: isDevelopment ? err.stack : undefined,
+    path: req.path,
+    user: req.user ? req.user._id : undefined
+  });
+  
   // Prepare response
   const response = {
-    error: message,
-    status
+    error: 'ServerError',
+    message
   };
-
+  
   // Add details in development
   if (isDevelopment) {
     response.details = details;
     response.stack = err.stack;
   }
-
+  
   res.status(status).json(response);
 };

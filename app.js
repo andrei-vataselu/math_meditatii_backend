@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const logger = require('./utils/logger');
 const app = express();
 
-// Trust proxy for Google Cloud Run / load balancers
+// Trust proxy for Google Cloud Run / load balancer
 app.set('trust proxy', 1);
 
 // Enhanced security headers
@@ -26,14 +26,20 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" }
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  frameguard: { action: 'deny' },
+  xssFilter: true,
+  noSniff: true
 }));
 
 // Enhanced CORS setup
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (process.env.NODE_ENV === 'production')
+    ? process.env.CLIENT_URL
+    : 'http://localhost:3000',
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   optionsSuccessStatus: 200
 }));
@@ -46,12 +52,13 @@ app.use(cookieParser());
 app.use(require('./middlewares/sanitize'));
 
 // Rate limiting (global, can override per route)
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
+// todo use in production
+// app.use(rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// }));
 
 // Health check endpoint
 app.get('/healthz', (req, res) => {
@@ -68,6 +75,8 @@ app.get('/healthz', (req, res) => {
 app.use('/stripe/webhook', require('express').raw({ type: 'application/json' }));
 
 // Routers
+// All sensitive routes are protected by authentication middleware in their respective route files.
+// Recommend implementing role-based access control for future admin/user separation.
 app.use('/auth', require('./routes/auth'));
 app.use('/user', require('./routes/user'));
 app.use('/plans', require('./routes/plans'));

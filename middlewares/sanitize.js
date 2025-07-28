@@ -1,24 +1,18 @@
 const mongoSanitize = require('express-mongo-sanitize');
 const sanitizeHtml = require('sanitize-html');
 
-// Custom sanitizer for req.body and req.params only
+// Improved sanitizer for req.body, req.params, and req.query
 function selectiveSanitize(req, res, next) {
-  if (req.body) {
-    for (const key in req.body) {
-      if (typeof req.body[key] === 'string') {
-        req.body[key] = sanitizeHtml(req.body[key]);
+  ['body', 'params', 'query'].forEach((location) => {
+    if (req[location]) {
+      for (const key in req[location]) {
+        if (typeof req[location][key] === 'string') {
+          req[location][key] = sanitizeHtml(req[location][key]);
+        }
       }
+      mongoSanitize.sanitize(req[location]);
     }
-    mongoSanitize.sanitize(req.body);
-  }
-  if (req.params) {
-    for (const key in req.params) {
-      if (typeof req.params[key] === 'string') {
-        req.params[key] = sanitizeHtml(req.params[key]);
-      }
-    }
-    mongoSanitize.sanitize(req.params);
-  }
+  });
   next();
 }
 
